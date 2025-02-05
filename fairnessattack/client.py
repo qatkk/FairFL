@@ -8,7 +8,11 @@ class Client():
         self.trainloader = trainloader
         self.testloader = testloader
         self.sensitive_attr = sensitive_attr
+        self.labeled_privileged = 0 
+        self.labeled_unprivileged = 0 
+        self.weight = 0
         data_size = 0
+        self.fairness = 0
         for X_batch, y_batch in trainloader:
             data_size += y_batch.size(0)
         self.data_size = data_size
@@ -19,10 +23,21 @@ class Client():
         train(self.net, self.trainloader)
         return get_weights(self.net), len(self.trainloader), {}
 
-    def evaluate(self, parameters):
-        set_weights(self.net, parameters)
+    def evaluate(self):
+        # set_weights(self.net, parameters)
         loss, accuracy = evaluate(self.net, self.testloader)
-        return loss, len(self.testloader), {"accuracy": accuracy}
+        return loss, len(self.testloader), {"accuracy": accuracy, "weighted": accuracy*self.data_size}
+    
+    def fairness_evaluate(self, privileged_probability, unprivileged_probability,
+                total_data_points, total_privilege_label_count, total_unprivilege_label_count):
+        self.fairness = fairness(model=self.net, test_loader=self.testloader, global_privileged_prob=privileged_probability, 
+                global_unprivilege_prob=unprivileged_probability, attr_index=self.sensitive_attr, 
+                privileged_value=self.privileged_value, client_priviledge_label_count=self.labeled_privileged, 
+                client_unprivilege_label_count=self.labeled_unprivileged, client_points=self.data_size, total_points=total_data_points, 
+                total_privilege_label_count=total_privilege_label_count, total_unprivilege_label_count=total_unprivilege_label_count)
+        
+        return self.fairness
+
     
     def initialize_round(self):
         privileged = 0 
@@ -46,21 +61,26 @@ class Client():
                 else:
                     labeled += 0             
         if labeled !=0 :   
-            return self.data_size, privileged/labeled, unprivilege/labeled
+            self.labeled_privileged = privileged
+            self.labeled_unprivileged = unprivilege
+            return self.data_size, privileged, unprivilege, labeled
         else: 
             return -1
-     
-
     
     def initialize_weights(self, total_size):
-        state_dict = self.net.state_dict()  # Get the current state dict
-        for key in state_dict.keys():
-            state_dict[key] = torch.full_like(state_dict[key], self.data_size/total_size)  # Fill with a single value
-        self.net.load_state_dict(state_dict)
+        self.weight = self.data_size / total_size
+    
+    def update_weights(self, beta, global_delta):
+        self.weight = self.weight - (beta * (self.fairness - global_delta))
 
-
-    def get_client_weights(self):
-        return get_weights(self.net)
+    def get_client_parameters(self, weighted = False):
+        if weighted: 
+            return get_weights(self.net, self.weight)
+        else:
+            return get_weights(self.net)
+    
+    def get_weight(self):
+        return self.weight
     
 def client_test():
     train_holder, test_holder, sensitive_attr_index, privileged_value = load_data(2, 3)

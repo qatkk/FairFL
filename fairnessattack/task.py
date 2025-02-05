@@ -112,28 +112,41 @@ def evaluate(model, test_loader):
     loss = loss / len(test_loader)
     return loss, accuracy
 
-def fairness(model, test_loader, privileged_prob, unprivilege_prob, attr_index, privileged_value):
+def fairness(
+        model, test_loader, global_privileged_prob,
+        global_unprivilege_prob, attr_index, privileged_value, 
+        client_priviledge_label_count, client_unprivilege_label_count, 
+        client_points, total_points, total_unprivilege_label_count, total_privilege_label_count):
     model.eval()
-    correct = 0
-    total = 0
-    privileged_labeled = 0 
-    privileged_predicted = 0 
-    unprivileged_labeled = 0 
-    unprivileged_predicted = 0 
+    privileged = 0 
+    unprivilege = 0 
     with torch.no_grad():
         for X_batch, y_batch in test_loader:
+            labeled = (y_batch.view(-1) == 1) 
             outputs = model(X_batch)
-            size = y_batch.size(0)
-            privileged = (X_batch[:, attr_index] == privileged_value).nonzero(as_tuple=False).squeeze()
-            unprivilege = (X_batch[:, attr_index] != privileged_value).nonzero(as_tuple=False).squeeze()
             predicted = (outputs > 0.5).float()
-            print(predicted)
-            privileged_labeled += (y_batch[privileged] == 1).nonzero(as_tuple=False).squeeze()
-            unprivileged_labeled += (y_batch[unprivilege] == 1).nonzero(as_tuple=False).squeeze()
-            total += y_batch.size(0)
-            break 
-    #         correct += (predicted == y_batch).sum().item()
-    # return loss, accuracy
+            mask = (labeled & (predicted.view(-1) == 1))
+            if mask.any():  
+                try: 
+                    privileged_count = (X_batch[mask, attr_index] == privileged_value).sum().item()
+                except Exception as e:
+                    privileged_count = 0  
+                try:
+                    unprivileged_count = (X_batch[mask, attr_index] != privileged_value).sum().item()
+                except Exception as e:
+                    unprivileged_count = 0  
+                privileged += privileged_count
+                unprivilege += unprivileged_count
+                # labeled += (y_batch == 1).sum().item()
+                # predicted_true += (predicted == 1).sum().item()
+    p_1 = unprivilege / client_unprivilege_label_count
+    p_2 = client_unprivilege_label_count / total_unprivilege_label_count 
+    p_3 = global_unprivilege_prob
+    p_4 = privileged / client_priviledge_label_count
+    p_5 = client_priviledge_label_count / total_privilege_label_count 
+    p_6 = global_privileged_prob
+    client_fairness = (client_points/total_points) * (((p_1 * p_2 )/p_3) - ((p_4 * p_5)/p_6))
+    return client_fairness
 
 
 def set_weights(net, parameters):
@@ -143,6 +156,6 @@ def set_weights(net, parameters):
 
 
 
-def get_weights(net):
-    ndarrays = [val.cpu().numpy() for _, val in net.state_dict().items()]
+def get_weights(net, scalar = 1.0):
+    ndarrays = [val.cpu().numpy() * scalar for _, val in net.state_dict().items()]
     return ndarrays
