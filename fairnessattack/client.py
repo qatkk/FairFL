@@ -70,8 +70,8 @@ class Client():
     def initialize_weights(self, total_size):
         self.weight = self.data_size / total_size
     
-    def update_weights(self, beta, global_delta):
-        self.weight = self.weight - (beta * (self.fairness - global_delta))
+    def update_weights(self, beta, client_delta, global_delta):
+        self.weight = self.weight - (beta * (client_delta - global_delta))
 
     def get_client_parameters(self, weighted = False):
         if weighted: 

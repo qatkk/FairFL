@@ -1,5 +1,6 @@
 from client import Client 
 from task import load_data, IncomeClassifier
+from matplotlib import pyplot as plt 
 
 def main():
     clients = [] 
@@ -56,6 +57,8 @@ def main():
         #  ///////////////////////  Delta Computation 
         fairness["local differences"].append([])
         accuracy["local differences"].append([])
+        fairness["global delta"] = 0
+        accuracy["global delta"] = 0
         for client_id in range(number_of_clients):
             fairness["local differences"][round].append(abs(fairness["global hist"][round] - fairness["local hist"][round][client_id]))
             fairness["global delta"] += fairness["local differences"][round][client_id]/number_of_clients
@@ -64,14 +67,13 @@ def main():
 
         fairness["global delta hist"].append(fairness["global delta"])
         accuracy["global delta hist"].append(accuracy["global delta"])
-        fairness["global delta"] = 0
-        accuracy["global delta"] = 0
+
 
         # ///////////////////// Local Weight Update
         print("Updating local weights based on local/global differences: ")
-        beta = 0.1 
+        beta = 1
         for client_id in range(number_of_clients):
-            clients[client_id].update_weights(beta, fairness["global delta hist"][round])
+            clients[client_id].update_weights(beta, fairness['local differences'][round][client_id], fairness["global delta hist"][round])
         
         # ///////////////////// Model Aggregation 
         print("Aggregating models with respect to their weights:")
@@ -79,13 +81,14 @@ def main():
         global_parameters = clients[0].get_client_parameters(weighted = True)
         for client_id in range(number_of_clients): 
             aggregated_weights += clients[client_id].get_weight()
-            if (client_id != 1):
+            if (client_id != 0):
                 global_parameters = [arr1 + arr2 for arr1, arr2 in zip(global_parameters, clients[client_id].get_client_parameters(weighted = True))]
-        aggregated_parameters = [arr * aggregated_weights for arr in global_parameters]
+        aggregated_parameters = [arr / aggregated_weights for arr in global_parameters]
 
         print ("Fitting new parameters: ")
         for client_id in range(number_of_clients):
             clients[client_id].fit(aggregated_parameters)
-
+    plt.plot(fairness["global hist"])
+    plt.show()
 if __name__ == "__main__":
     main()
