@@ -82,10 +82,3 @@ class Client():
     def get_weight(self):
         return self.weight
     
-def client_test():
-    train_holder, test_holder, sensitive_attr_index, privileged_value = load_data(2, 3)
-    net = IncomeClassifier() 
-    first_client = Client(net, trainloader=train_holder, testloader=test_holder, sensitive_attr=sensitive_attr_index, privileged_value=privileged_value)
-    first_client.initialize_round()
-
-client_test()
