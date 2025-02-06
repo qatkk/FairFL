@@ -8,16 +8,20 @@ def main():
     total_number_of_datapoints = 0 
     privileged_counts = 0 
     unprivileged_counts  = 0 
+    round = 0 
+    fairness_epsilon = 1000
+    convergence_range = 0.001
     total_labels = 0
-    number_of_clients = 3
-    number_of_rounds = 5
+    number_of_clients = 5
+    beta = 1
+
     fairness = {"global value": 0, "global hist":[], "local hist": [[]], "local differences": [[]], "global delta hist": [], "global delta": 0}
     accuracy = {"global value": 0, "global hist":[], "local hist": [[]], "local differences": [[]], "global delta hist": [], "global delta": 0}
     net = IncomeClassifier() 
 
     for client_id in range(number_of_clients):
         train_holder, test_holder, sensitive_attr_index, privileged_value = load_data(client_id, num_partitions=number_of_clients)
-        clients.append(Client(net, trainloader=train_holder, testloader=test_holder, 
+        clients.append(Client(client_id, net, trainloader=train_holder, testloader=test_holder, 
                               sensitive_attr=sensitive_attr_index, privileged_value=privileged_value))
         # ///////////////////  Initialization  
         initialize_values.append(list(clients[client_id].initialize_round()))
@@ -28,9 +32,10 @@ def main():
     for client_id in range(number_of_clients): 
         clients[client_id].initialize_weights(total_number_of_datapoints)
 
-    print(f"Initialization round done! \n Number of data points in total are, {total_number_of_datapoints}, with privileged statistics as {privileged_counts/total_labels} and unprivileged statistics as {unprivileged_counts/total_labels}")
+    print(f"Initialization round done! \n Number of data points in total are, {total_number_of_datapoints}, \n with privileged labeled as {privileged_counts} and unprivileged statistics as {unprivileged_counts} \n client data points are as: {initialize_values[:][0]}")
 
-    for round in range(number_of_rounds):
+    # for round in range(number_of_rounds):
+    while(fairness_epsilon > convergence_range):
         print(f"Starting round {round}")
         print("Starting fariness computations: ")
         #  //////////////////////   Fairness Computation  
@@ -49,10 +54,11 @@ def main():
         # accuracy["local hist"][round] = accuracy_round
         accuracy["global hist"].append(accuracy["global value"])
         accuracy["global value"] = 0
+        if (round>=1):
+            fairness_epsilon = abs(fairness["global hist"][round] - fairness["global hist"][round-1])
 
         print(f"Fairness values are: \n {fairness['local hist'][round]} \n and accuracies are: \n {accuracy["local hist"][round]}")
-        if round >= 1: 
-            print(f"Global fairness for this round is {fairness["global hist"][round]} and for the previous round {fairness['global hist'][round - 1]}")
+
         print("Starting local difference computations: ")
         #  ///////////////////////  Delta Computation 
         fairness["local differences"].append([])
@@ -71,7 +77,6 @@ def main():
 
         # ///////////////////// Local Weight Update
         print("Updating local weights based on local/global differences: ")
-        beta = 1
         for client_id in range(number_of_clients):
             clients[client_id].update_weights(beta, fairness['local differences'][round][client_id], fairness["global delta hist"][round])
         
@@ -88,7 +93,11 @@ def main():
         print ("Fitting new parameters: ")
         for client_id in range(number_of_clients):
             clients[client_id].fit(aggregated_parameters)
-    plt.plot(fairness["global hist"])
-    plt.show()
+
+        round += 1 
+    return fairness["global hist"]
+
 if __name__ == "__main__":
-    main()
+    fariness_values = main()
+    plt.plot(fariness_values)
+    plt.show()

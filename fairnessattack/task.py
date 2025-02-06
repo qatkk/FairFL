@@ -16,21 +16,15 @@ fds = None  # Cache FederatedDataset
 
 
 def load_data(partition_id: int, num_partitions: int):
-
     global fds
     if fds is None:
-        try :
-            partitioner = DirichletPartitioner(num_partitions=num_partitions, alpha=0.2, partition_by='income', min_partition_size=100)
+            partitioner = DirichletPartitioner(num_partitions=num_partitions, alpha=0.2, partition_by='income', min_partition_size=300)
             fds = FederatedDataset(
                 dataset="scikit-learn/adult-census-income",
                 partitioners={"train": partitioner},
             )
-        except Exception as e:
-            print("Change the partitioning parameters such as alpha, number of clients, or minimum partition size", e) 
-
 
     dataset = fds.load_partition(partition_id, "train").with_format("pandas")[:]
-
     dataset.dropna(inplace=True)
 
     categorical_cols = dataset.select_dtypes(include=["object"]).columns
@@ -62,8 +56,8 @@ def load_data(partition_id: int, num_partitions: int):
 
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-    train_loader = DataLoader(train_dataset, batch_size=50, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=50, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=14, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=14, shuffle=False)
     return train_loader, test_loader, attr_index, privileged_transformed
 
 

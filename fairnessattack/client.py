@@ -1,10 +1,11 @@
 from task import IncomeClassifier,  evaluate, get_weights, load_data, set_weights, train, fairness
 import torch
-
+import warnings
 
 class Client():
-    def __init__(self, net, trainloader, testloader, sensitive_attr, privileged_value):
+    def __init__(self, id, net, trainloader, testloader, sensitive_attr, privileged_value):
         self.net = net
+        self.id = id
         self.trainloader = trainloader
         self.testloader = testloader
         self.sensitive_attr = sensitive_attr
@@ -65,7 +66,9 @@ class Client():
             self.labeled_unprivileged = unprivilege
             return self.data_size, privileged, unprivilege, labeled
         else: 
-            return -1
+            warnings.warn(f"Client {self.id} doesn't have any true labeled data")
+            return self.data_size, privileged, unprivilege, labeled
+
     
     def initialize_weights(self, total_size):
         self.weight = self.data_size / total_size
