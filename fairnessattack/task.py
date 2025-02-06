@@ -1,5 +1,5 @@
 from collections import OrderedDict
-
+import numpy as np 
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,7 +13,6 @@ from flwr_datasets.partitioner import DirichletPartitioner
 
 
 fds = None  # Cache FederatedDataset
-
 
 def load_data(partition_id: int, num_partitions: int):
     global fds
@@ -33,7 +32,7 @@ def load_data(partition_id: int, num_partitions: int):
 
     X = dataset.drop("income", axis=1)
     y = dataset["income"]
-    attr_index = X.columns.get_loc('sex')
+    attr_index = X.columns.get_loc('race')
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
@@ -44,7 +43,7 @@ def load_data(partition_id: int, num_partitions: int):
         transformers=[("num", numeric_transformer, numeric_features)]
     )
 
-    row = X_test[X_test['sex'] == 1]
+    row = X_test[X_test['race'] == 4]
     X_train = preprocessor.fit_transform(X_train)
     X_test = preprocessor.transform(X_test)
     privileged_transformed = preprocessor.transform(row)[:, attr_index][0]

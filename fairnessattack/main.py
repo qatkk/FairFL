@@ -48,10 +48,8 @@ def main():
             accuracy["local hist"][round].append(client_accuracy["weighted"]/total_number_of_datapoints)
             accuracy["global value"] += accuracy["local hist"][round][client_id]
 
-        # fairness["local hist"][round] = fairness_round
         fairness["global hist"].append(fairness["global value"])
         fairness["global value"] = 0 
-        # accuracy["local hist"][round] = accuracy_round
         accuracy["global hist"].append(accuracy["global value"])
         accuracy["global value"] = 0
         if (round>=1):
@@ -101,3 +99,4 @@ if __name__ == "__main__":
     fariness_values = main()
     plt.plot(fariness_values)
     plt.show()
+
