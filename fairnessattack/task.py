@@ -60,7 +60,7 @@ def load_data(partition_id: int, num_partitions: int):
     test_loader = DataLoader(test_dataset, batch_size=14, shuffle=False)
     return train_loader, test_loader, attr_index, privileged_transformed
 
-def save_dataset(partition_id: int, num_partitions: int, save_path: str = "dataset.csv"):
+def save_dataset(partition_id: int, num_partitions: int, save_path: str = "./data/"):
     global fds
     if fds is None:
         partitioner = DirichletPartitioner(num_partitions=num_partitions, alpha=0.2, partition_by='income', min_partition_size=300)
@@ -80,21 +80,26 @@ def save_dataset(partition_id: int, num_partitions: int, save_path: str = "datas
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.20, random_state=42
     )
+    train_data = X_train.copy()
+    train_data['income'] = y_train
+    for _ in range(10):
+        train_data = train_data.sample(frac=1, random_state=99).reset_index(drop=True)
+    X_train = train_data.drop(columns=["income"])
+    y_train = train_data["income"]
 
     # Save the processed dataset
-    X_train.to_csv(str(partition_id)+ "_train_" +save_path, index=False)
-    y_train.to_csv(str(partition_id)+ "_train_label_" +save_path, index=False)
-    X_test.to_csv(str(partition_id)+ "_test_" +save_path, index=False)
-    y_test.to_csv(str(partition_id)+ "_test_label_" +save_path, index=False)
-
-    print(f"Dataset saved to {save_path}")
+    X_train.to_csv(save_path + str(partition_id)+ "_train_dataset.csv" , index=False)
+    y_train.to_csv(save_path + str(partition_id)+ "_train_label_dataset.csv" , index=False)
+    X_test.to_csv(save_path + str(partition_id)+ "_test_dataset.csv", index=False)
+    y_test.to_csv(save_path + str(partition_id)+ "_test_label_dataset.csv", index=False)
 
 
-def prepare_dataset(partition_id, file_path: str = "dataset.csv"):
-    X_train = pd.read_csv(str(partition_id)+ "_train_" +file_path)
-    y_train = pd.read_csv(str(partition_id)+ "_train_label_" +file_path)
-    X_test = pd.read_csv(str(partition_id)+ "_test_" +file_path)
-    y_test = pd.read_csv(str(partition_id)+ "_test_label_" +file_path)
+
+def prepare_dataset(partition_id, file_path: str = "./data/"):
+    X_train = pd.read_csv(file_path + str(partition_id)+ "_train_dataset.csv")
+    y_train = pd.read_csv(file_path + str(partition_id)+ "_train_label_dataset.csv" )
+    X_test = pd.read_csv(file_path + str(partition_id)+ "_test_dataset.csv")
+    y_test = pd.read_csv(file_path + str(partition_id)+ "_test_label_dataset.csv")
     X = pd.concat([X_train, X_test], ignore_index=True)
     attr_index = X.columns.get_loc('race')
 
@@ -117,8 +122,8 @@ def prepare_dataset(partition_id, file_path: str = "dataset.csv"):
 
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-    train_loader = DataLoader(train_dataset, batch_size=14, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=14, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=35, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=35, shuffle=False)
     return train_loader, test_loader, attr_index, privileged_transformed
 
 
