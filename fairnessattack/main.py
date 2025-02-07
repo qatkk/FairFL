@@ -1,5 +1,5 @@
 from client import Client 
-from task import load_data, IncomeClassifier
+from task import load_data, IncomeClassifier, save_dataset, prepare_dataset, save_model, load_model, get_weights
 from matplotlib import pyplot as plt 
 
 def main():
@@ -14,13 +14,23 @@ def main():
     total_labels = 0
     number_of_clients = 5
     beta = 1
+    set_dataset = False
 
     fairness = {"global value": 0, "global hist":[], "local hist": [[]], "local differences": [[]], "global delta hist": [], "global delta": 0}
     accuracy = {"global value": 0, "global hist":[], "local hist": [[]], "local differences": [[]], "global delta hist": [], "global delta": 0}
-    net = IncomeClassifier() 
+    if (set_dataset):
+        net = IncomeClassifier() 
+        save_model(net)
+        print(get_weights(net))
+    else: 
+        net = load_model()
+        print(get_weights(net))
 
     for client_id in range(number_of_clients):
-        train_holder, test_holder, sensitive_attr_index, privileged_value = load_data(client_id, num_partitions=number_of_clients)
+        if (set_dataset) :
+            save_dataset(client_id, number_of_clients)
+        # train_holder, test_holder, sensitive_attr_index, privileged_value = load_data(client_id, num_partitions=number_of_clients)
+        train_holder, test_holder, sensitive_attr_index, privileged_value = prepare_dataset(client_id)
         clients.append(Client(client_id, net, trainloader=train_holder, testloader=test_holder, 
                               sensitive_attr=sensitive_attr_index, privileged_value=privileged_value))
         # ///////////////////  Initialization  
@@ -99,4 +109,6 @@ if __name__ == "__main__":
     fariness_values = main()
     plt.plot(fariness_values)
     plt.show()
+    # save_dataset(1, 5)
+    # prepare_dataset(1)
 

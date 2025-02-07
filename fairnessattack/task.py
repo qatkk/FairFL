@@ -1,5 +1,6 @@
 from collections import OrderedDict
 import numpy as np 
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -34,7 +35,7 @@ def load_data(partition_id: int, num_partitions: int):
     y = dataset["income"]
     attr_index = X.columns.get_loc('race')
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.25, random_state=42
     )
     numeric_features = X.select_dtypes(include=["float64", "int64"]).columns
     numeric_transformer = Pipeline(steps=[("scaler", StandardScaler())])
@@ -59,6 +60,66 @@ def load_data(partition_id: int, num_partitions: int):
     test_loader = DataLoader(test_dataset, batch_size=14, shuffle=False)
     return train_loader, test_loader, attr_index, privileged_transformed
 
+def save_dataset(partition_id: int, num_partitions: int, save_path: str = "dataset.csv"):
+    global fds
+    if fds is None:
+        partitioner = DirichletPartitioner(num_partitions=num_partitions, alpha=0.2, partition_by='income', min_partition_size=300)
+        fds = FederatedDataset(
+            dataset="scikit-learn/adult-census-income",
+            partitioners={"train": partitioner},
+        )
+
+    dataset = fds.load_partition(partition_id, "train").with_format("pandas")[:]
+    dataset.dropna(inplace=True) 
+    categorical_cols = dataset.select_dtypes(include=["object"]).columns
+    ordinal_encoder = OrdinalEncoder()
+    dataset[categorical_cols] = ordinal_encoder.fit_transform(dataset[categorical_cols])
+
+    X = dataset.drop("income", axis=1)
+    y = dataset["income"]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.20, random_state=42
+    )
+
+    # Save the processed dataset
+    X_train.to_csv(str(partition_id)+ "_train_" +save_path, index=False)
+    y_train.to_csv(str(partition_id)+ "_train_label_" +save_path, index=False)
+    X_test.to_csv(str(partition_id)+ "_test_" +save_path, index=False)
+    y_test.to_csv(str(partition_id)+ "_test_label_" +save_path, index=False)
+
+    print(f"Dataset saved to {save_path}")
+
+
+def prepare_dataset(partition_id, file_path: str = "dataset.csv"):
+    X_train = pd.read_csv(str(partition_id)+ "_train_" +file_path)
+    y_train = pd.read_csv(str(partition_id)+ "_train_label_" +file_path)
+    X_test = pd.read_csv(str(partition_id)+ "_test_" +file_path)
+    y_test = pd.read_csv(str(partition_id)+ "_test_label_" +file_path)
+    X = pd.concat([X_train, X_test], ignore_index=True)
+    attr_index = X.columns.get_loc('race')
+
+    numeric_features = X.select_dtypes(include=["float64", "int64"]).columns
+    numeric_transformer = Pipeline(steps=[("scaler", StandardScaler())])
+
+    preprocessor = ColumnTransformer(
+        transformers=[("num", numeric_transformer, numeric_features)]
+    )
+
+    row = X_test[X_test['race'] == 4]
+    X_train = preprocessor.fit_transform(X_train)
+    X_test = preprocessor.transform(X_test)
+    privileged_transformed = preprocessor.transform(row)[:, attr_index][0]
+
+    X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+    X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
+    y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32).view(-1, 1)
+    y_test_tensor = torch.tensor(y_test.values, dtype=torch.float32).view(-1, 1)
+
+    train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+    test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
+    train_loader = DataLoader(train_dataset, batch_size=14, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=14, shuffle=False)
+    return train_loader, test_loader, attr_index, privileged_transformed
 
 
 class IncomeClassifier(nn.Module):
@@ -75,6 +136,15 @@ class IncomeClassifier(nn.Module):
         x = self.relu(self.layer2(x))
         x = self.sigmoid(self.output(x))
         return x
+
+def save_model(model, filepath="income_classifier.pth"):
+    torch.save(model.state_dict(), filepath)
+    print(f"Model weights saved to {filepath}")\
+    
+def load_model(filepath="income_classifier.pth", input_dim=14):
+    model = IncomeClassifier(input_dim=input_dim)  # Create an instance
+    model.load_state_dict(torch.load(filepath)) 
+    return model 
 
 
 def train(model, train_loader, num_epochs=1):
