@@ -11,7 +11,10 @@ In the directory of the project first run the command below to install the depen
 `poetry install`
 
 After setting your desired training values in the "main.py" run the project as below: 
- `mkdir data`
+
 `cd fairnessattack`
+
+`mkdir data' 
+
 `poetry run python main.py`
 
