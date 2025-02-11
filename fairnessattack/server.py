@@ -30,7 +30,6 @@ class Server():
         for client_id in range(self.number_of_clients):
             if (self.set_dataset) :
                 save_dataset(client_id, self.number_of_clients)
-            # train_holder, test_holder, sensitive_attr_index, privileged_value = load_data(client_id, num_partitions=number_of_clients)
             train_holder, test_holder, sensitive_attr_index, privileged_value = prepare_dataset(client_id)
             self.clients.append(Client(client_id, self.global_model, trainloader=train_holder, testloader=test_holder, 
                                 sensitive_attr=sensitive_attr_index, privileged_value=privileged_value))
@@ -54,7 +53,7 @@ class Server():
             self.fairness_values["local hist"].append([])
             self.accuracy_values["local hist"].append([])
             for client_id in range(self.number_of_clients):
-                self.fairness_values["local hist"][round].append(self.clients[client_id].fairness_evaluate(self.privileged_counts/self.total_labels, self.unprivileged_counts/self.total_labels, self.total_number_of_datapoints, self.privileged_counts, self.unprivileged_counts))
+                self.fairness_values["local hist"][round].append(self.clients[client_id].fairness_evaluate(self.privileged_counts/self.total_number_of_datapoints, self.unprivileged_counts/self.total_number_of_datapoints, self.total_number_of_datapoints, self.privileged_counts, self.unprivileged_counts))
                 self.fairness_values["global value"] += self.fairness_values["local hist"][round][client_id]
                 _, _, client_accuracy = self.clients[client_id].evaluate()
                 self.accuracy_values["local hist"][round].append(client_accuracy["weighted"]/self.total_number_of_datapoints)

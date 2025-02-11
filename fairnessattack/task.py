@@ -63,7 +63,7 @@ def load_data(partition_id: int, num_partitions: int):
 def save_dataset(partition_id: int, num_partitions: int, save_path: str = "./data/"):
     global fds
     if fds is None:
-        partitioner = DirichletPartitioner(num_partitions=num_partitions, alpha=0.3, partition_by='sex', min_partition_size=20)
+        partitioner = DirichletPartitioner(num_partitions=num_partitions, alpha=0.2, partition_by='sex')
         fds = FederatedDataset(
             dataset="scikit-learn/adult-census-income",
             partitioners={"train": partitioner},
@@ -101,23 +101,23 @@ def prepare_dataset(partition_id, file_path: str = "./data/"):
     X_test = pd.read_csv(file_path + str(partition_id)+ "_test_dataset.csv")
     y_test = pd.read_csv(file_path + str(partition_id)+ "_test_label_dataset.csv")
     X = pd.concat([X_train, X_test], ignore_index=True)
-    # attr_index = X.columns.get_loc('race')
     attr_index = X.columns.get_loc('sex')
-
-
     numeric_features = X.select_dtypes(include=["float64", "int64"]).columns
     numeric_transformer = Pipeline(steps=[("scaler", StandardScaler())])
 
     preprocessor = ColumnTransformer(
         transformers=[("num", numeric_transformer, numeric_features)]
     )
-    # row = X_test[X_test['race'] == 4].iloc[0]
-    row = X_test[X_test['sex'] == 1].iloc[0]
-    row_df = pd.DataFrame([row])
     X_train = preprocessor.fit_transform(X_train)
-    X_test = preprocessor.transform(X_test)
-    privileged_transformed = preprocessor.transform(row_df)[:, attr_index][0]
 
+    try:
+        row = X_test[X_test['sex'] == 1].iloc[0]
+        row_df = pd.DataFrame([row])
+        privileged_transformed = preprocessor.transform(row_df)[:, attr_index][0]
+    except: 
+        privileged_transformed = -1 
+
+    X_test = preprocessor.transform(X_test)
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32).view(-1, 1)
@@ -221,9 +221,9 @@ def fairness(
     else  :
         p_1 = unprivilege / client_unprivilege_label_count
         
-    p_2 = client_unprivilege_label_count / total_unprivilege_label_count 
+    p_2 = client_unprivilege_label_count / client_points 
     p_3 = global_unprivilege_prob
-    p_5 = client_priviledge_label_count / total_privilege_label_count 
+    p_5 = client_priviledge_label_count / client_points 
     p_6 = global_privileged_prob
     client_fairness = (client_points/total_points) * (((p_1 * p_2 )/p_3) - ((p_4 * p_5)/p_6))
     return client_fairness
