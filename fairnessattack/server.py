@@ -3,8 +3,9 @@ from task import load_data, IncomeClassifier, save_dataset, prepare_dataset, sav
 import sys
 
 class Server():
-    def __init__(self, convergence_threshold, beta, set_new_test, number_of_clients):
+    def __init__(self, convergence_threshold, beta, set_new_test, number_of_clients, dataset = 'adult'):
         self.clients = [] 
+        self.dataset = dataset
         self.total_number_of_datapoints = 0 
         self.privileged_counts = 0 
         self.unprivileged_counts  = 0 
@@ -12,7 +13,7 @@ class Server():
         self.total_labels = 0
         self.number_of_clients = number_of_clients
         self.beta = beta
-        self.global_model = IncomeClassifier()
+        self.global_model = IncomeClassifier(dataset = dataset)
         self.set_dataset = set_new_test
         self.fairness_values = {"global value": 0, "global hist":[], "local hist": [[]], "local differences": [[]], "global delta hist": [], "global delta": 0}
         self.accuracy_values = {"global value": 0, "global hist":[], "local hist": [[]], "local differences": [[]], "global delta hist": [], "global delta": 0}
@@ -23,14 +24,18 @@ class Server():
             save_model(self.global_model)
         else: 
             try:
-                self.global_model = load_model()
+                self.global_model = load_model(dataset= self.dataset)
             except Exception as e:
                 sys.exit("Initialize the data set first -> set_new_test = True")
 
         for client_id in range(self.number_of_clients):
             if (self.set_dataset) :
-                save_dataset(client_id, self.number_of_clients)
-            train_holder, test_holder, sensitive_attr_index, privileged_value = prepare_dataset(client_id)
+                if self.dataset == 'census' :
+                    save_dataset(client_id, self.number_of_clients)
+                else : 
+                    load_data(self.number_of_clients)
+
+            train_holder, test_holder, sensitive_attr_index, privileged_value = prepare_dataset(client_id, dataset= self.dataset)
             self.clients.append(Client(client_id, self.global_model, trainloader=train_holder, testloader=test_holder, 
                                 sensitive_attr=sensitive_attr_index, privileged_value=privileged_value))
             # ///////////////////  Initialization  

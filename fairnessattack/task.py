@@ -11,54 +11,75 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder, StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 from flwr_datasets.partitioner import DirichletPartitioner
-
+from datasets import load_dataset
 
 fds = None  # Cache FederatedDataset
 
-def load_data(partition_id: int, num_partitions: int):
-    global fds
-    if fds is None:
-            partitioner = DirichletPartitioner(num_partitions=num_partitions, alpha=0.2, partition_by='income', min_partition_size=300)
-            fds = FederatedDataset(
-                dataset="scikit-learn/adult-census-income",
-                partitioners={"train": partitioner},
-            )
 
-    dataset = fds.load_partition(partition_id, "train").with_format("pandas")[:]
-    dataset.dropna(inplace=True)
+def load_data(num_partitions: int):
+    dataset = load_dataset("mstz/adult", "income")
+    
+    X_train = dataset['train'].to_pandas() 
+    file_path = './data/'
+    X_test = dataset['test'].to_pandas()
+    X = pd.concat([X_train, X_test], ignore_index=True)
+    X.dropna(inplace=True)
 
-    categorical_cols = dataset.select_dtypes(include=["object"]).columns
+    categorical_cols = X.select_dtypes(include=["object"]).columns
+
     ordinal_encoder = OrdinalEncoder()
-    dataset[categorical_cols] = ordinal_encoder.fit_transform(dataset[categorical_cols])
+    X[categorical_cols] = ordinal_encoder.fit_transform(X[categorical_cols])
+    client_partitions = dirichlet_partition(X, num_clients=num_partitions, alpha=0.2, label_column='is_male')
 
-    X = dataset.drop("income", axis=1)
-    y = dataset["income"]
-    attr_index = X.columns.get_loc('race')
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.25, random_state=42
-    )
-    numeric_features = X.select_dtypes(include=["float64", "int64"]).columns
-    numeric_transformer = Pipeline(steps=[("scaler", StandardScaler())])
+    for client_id in range(num_partitions):
+        client_data = client_partitions[client_id]
+    
+        X_client = client_data.drop(columns=["over_threshold"])
+        y_client = client_data["over_threshold"]
+        X_train, X_test, y_train, y_test = train_test_split(
+            X_client, y_client, test_size=0.20, random_state=42
+        )
+        train_data = X_train.copy()
+        train_data['over_threshold'] = y_train
 
-    preprocessor = ColumnTransformer(
-        transformers=[("num", numeric_transformer, numeric_features)]
-    )
+        for _ in range(10):
+            train_data = train_data.sample(frac=1, random_state=42).reset_index(drop=True)
+        
+        X_train = train_data.drop(columns=["over_threshold"])
+        y_train = train_data["over_threshold"]
+        
+        X_train.to_csv(file_path + str(client_id) + "_train_dataset.csv", index=False)
+        y_train.to_csv(file_path + str(client_id) + "_train_label_dataset.csv", index=False)
+        X_test.to_csv(file_path + str(client_id) + "_test_dataset.csv", index=False)
+        y_test.to_csv(file_path + str(client_id) + "_test_label_dataset.csv", index=False)
+        
 
-    row = X_test[X_test['race'] == 4]
-    X_train = preprocessor.fit_transform(X_train)
-    X_test = preprocessor.transform(X_test)
-    privileged_transformed = preprocessor.transform(row)[:, attr_index][0]
-
-    X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
-    X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-    y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32).view(-1, 1)
-    y_test_tensor = torch.tensor(y_test.values, dtype=torch.float32).view(-1, 1)
-
-    train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-    test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
-    train_loader = DataLoader(train_dataset, batch_size=14, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=14, shuffle=False)
-    return train_loader, test_loader, attr_index, privileged_transformed
+def dirichlet_partition(df, label_column, num_clients, alpha=0.2):
+    labels = df[label_column].values
+    unique_classes, class_counts = np.unique(labels, return_counts=True)
+    
+    # Generate Dirichlet distributions per class
+    partitions = {i: [] for i in range(num_clients)}
+    for c in unique_classes:
+        class_indices = np.where(labels == c)[0]
+        np.random.shuffle(class_indices)
+        
+        # Sample Dirichlet distribution for this class
+        proportions = np.random.dirichlet([alpha] * num_clients)
+        proportions = (proportions * len(class_indices)).astype(int)
+        
+        # Ensure all data is assigned
+        proportions[-1] += len(class_indices) - sum(proportions)
+        
+        # Distribute indices to partitions
+        start_idx = 0
+        for i, count in enumerate(proportions):
+            partitions[i].extend(class_indices[start_idx:start_idx + count])
+            start_idx += count
+    
+    client_datasets = {i: df.iloc[indices] for i, indices in partitions.items()}
+    
+    return client_datasets
 
 def save_dataset(partition_id: int, num_partitions: int, save_path: str = "./data/"):
     global fds
@@ -95,13 +116,18 @@ def save_dataset(partition_id: int, num_partitions: int, save_path: str = "./dat
 
 
 
-def prepare_dataset(partition_id, file_path: str = "./data/"):
+def prepare_dataset(partition_id, dataset, file_path: str = "./data/"):
     X_train = pd.read_csv(file_path + str(partition_id)+ "_train_dataset.csv")
     y_train = pd.read_csv(file_path + str(partition_id)+ "_train_label_dataset.csv" )
     X_test = pd.read_csv(file_path + str(partition_id)+ "_test_dataset.csv")
     y_test = pd.read_csv(file_path + str(partition_id)+ "_test_label_dataset.csv")
     X = pd.concat([X_train, X_test], ignore_index=True)
-    attr_index = X.columns.get_loc('sex')
+    if dataset == 'adult':
+        attribute = {"name": 'is_male', 'value':True}
+    else: 
+        attribute = {"name": 'sex', 'value':1}
+
+    attr_index = X.columns.get_loc(attribute["name"])
     numeric_features = X.select_dtypes(include=["float64", "int64"]).columns
     numeric_transformer = Pipeline(steps=[("scaler", StandardScaler())])
 
@@ -111,7 +137,7 @@ def prepare_dataset(partition_id, file_path: str = "./data/"):
     X_train = preprocessor.fit_transform(X_train)
 
     try:
-        row = X_test[X_test['sex'] == 1].iloc[0]
+        row = X_test[X_test[attribute["name"]] == attribute["value"]].iloc[0]
         row_df = pd.DataFrame([row])
         privileged_transformed = preprocessor.transform(row_df)[:, attr_index][0]
     except: 
@@ -122,7 +148,6 @@ def prepare_dataset(partition_id, file_path: str = "./data/"):
     X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32).view(-1, 1)
     y_test_tensor = torch.tensor(y_test.values, dtype=torch.float32).view(-1, 1)
-
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
     train_loader = DataLoader(train_dataset, batch_size=35, shuffle=False)
@@ -131,7 +156,11 @@ def prepare_dataset(partition_id, file_path: str = "./data/"):
 
 
 class IncomeClassifier(nn.Module):
-    def __init__(self, input_dim: int = 14):
+    def __init__(self, dataset):
+        if dataset == 'adult':
+            input_dim = 12 
+        else : 
+            input_dim = 14
         super(IncomeClassifier, self).__init__()
         self.layer1 = nn.Linear(input_dim, 128)
         self.layer2 = nn.Linear(128, 64)
@@ -149,7 +178,11 @@ def save_model(model, filepath="income_classifier.pth"):
     torch.save(model.state_dict(), filepath)
     print(f"Model weights saved to {filepath}")\
     
-def load_model(filepath="income_classifier.pth", input_dim=14):
+def load_model(dataset, filepath="income_classifier.pth"):
+    if dataset == 'adult' : 
+        input_dim = 12 
+    else :
+        input_dim = 14
     model = IncomeClassifier(input_dim=input_dim)  # Create an instance
     model.load_state_dict(torch.load(filepath)) 
     return model 
