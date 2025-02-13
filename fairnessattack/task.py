@@ -4,6 +4,9 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from fairlearn.datasets import fetch_acs_income
+from folktables import ACSDataSource, ACSIncome
+
 from flwr_datasets import FederatedDataset
 from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
@@ -81,38 +84,36 @@ def dirichlet_partition(df, label_column, num_clients, alpha=0.2):
     
     return client_datasets
 
-def save_dataset(partition_id: int, num_partitions: int, save_path: str = "./data/"):
-    global fds
-    if fds is None:
-        partitioner = DirichletPartitioner(num_partitions=num_partitions, alpha=0.2, partition_by='sex')
-        fds = FederatedDataset(
-            dataset="scikit-learn/adult-census-income",
-            partitioners={"train": partitioner},
+def save_dataset(save_path: str = "./data/"):
+    data_source = ACSDataSource(survey_year='2018', horizon='1-Year', survey='person')
+    state_abbreviations = {
+        0: "AL", 1: "AK", 2: "AZ", 3: "AR", 4: "CA", 5: "CO", 6: "CT", 7: "DE", 8: "FL",
+        9: "GA", 10: "HI", 11: "ID", 12: "IL", 13: "IN", 14: "IA", 15: "KS", 16: "KY", 17: "LA", 
+        18: "ME", 19: "MD", 20: "MA", 21: "MI", 22: "MN", 23: "MS", 24: "MO", 25: "MT", 26: "NE", 
+        27: "NV", 28: "NH", 29: "NJ", 30: "NM", 31: "NY", 32: "NC", 33: "ND", 34: "OH", 35: "OK", 
+        36: "OR", 37: "PA", 38: "RI", 39: "SC", 40: "SD", 41: "TN", 42: "TX", 43: "UT", 44: "VT", 
+        45: "VA", 46: "WA", 47: "WV", 48: "WI", 49: "WY", 50: "PR"
+    }
+    for state_index in range(51):
+        print(state_abbreviations[state_index])
+        acs_data = data_source.get_data(states=[state_abbreviations[state_index]], download=True)
+        features, label, _ = ACSIncome.df_to_numpy(acs_data)
+
+        X = pd.DataFrame(features, columns=ACSIncome.features)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, label, test_size=0.20, random_state=42
         )
+        # train_data = X_train.copy()
+        # train_data['income'] = y_train
+        # for _ in range(10):
+        #     train_data = train_data.sample(frac=1, random_state=99).reset_index(drop=True)
+        # X_train = pd.DataFrame(train_data.drop(columns=["income"]))
+        # y_train = train_data["income"]
+        pd.DataFrame(X_train).to_csv(save_path + str(state_index)+ "_train_dataset.csv" , index=False)
+        pd.DataFrame(y_train).to_csv(save_path + str(state_index)+ "_train_label_dataset.csv" , index=False)
+        pd.DataFrame(X_test).to_csv(save_path + str(state_index)+ "_test_dataset.csv", index=False)
+        pd.DataFrame(y_test).to_csv(save_path + str(state_index)+ "_test_label_dataset.csv", index=False)
 
-    dataset = fds.load_partition(partition_id, "train").with_format("pandas")[:]
-    dataset.dropna(inplace=True) 
-    categorical_cols = dataset.select_dtypes(include=["object"]).columns
-    ordinal_encoder = OrdinalEncoder()
-    dataset[categorical_cols] = ordinal_encoder.fit_transform(dataset[categorical_cols])
-
-    X = dataset.drop("income", axis=1)
-    y = dataset["income"]
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.20, random_state=42
-    )
-    train_data = X_train.copy()
-    train_data['income'] = y_train
-    for _ in range(10):
-        train_data = train_data.sample(frac=1, random_state=99).reset_index(drop=True)
-    X_train = train_data.drop(columns=["income"])
-    y_train = train_data["income"]
-
-    # Save the processed dataset
-    X_train.to_csv(save_path + str(partition_id)+ "_train_dataset.csv" , index=False)
-    y_train.to_csv(save_path + str(partition_id)+ "_train_label_dataset.csv" , index=False)
-    X_test.to_csv(save_path + str(partition_id)+ "_test_dataset.csv", index=False)
-    y_test.to_csv(save_path + str(partition_id)+ "_test_label_dataset.csv", index=False)
 
 
 
@@ -125,8 +126,7 @@ def prepare_dataset(partition_id, dataset, file_path: str = "./data/"):
     if dataset == 'adult':
         attribute = {"name": 'is_male', 'value':True}
     else: 
-        attribute = {"name": 'sex', 'value':1}
-
+        attribute = {"name": 'RAC1P', 'value':1}
     attr_index = X.columns.get_loc(attribute["name"])
     numeric_features = X.select_dtypes(include=["float64", "int64"]).columns
     numeric_transformer = Pipeline(steps=[("scaler", StandardScaler())])
@@ -142,7 +142,6 @@ def prepare_dataset(partition_id, dataset, file_path: str = "./data/"):
         privileged_transformed = preprocessor.transform(row_df)[:, attr_index][0]
     except: 
         privileged_transformed = -1 
-
     X_test = preprocessor.transform(X_test)
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
@@ -159,8 +158,8 @@ class IncomeClassifier(nn.Module):
     def __init__(self, dataset):
         if dataset == 'adult':
             input_dim = 12 
-        else : 
-            input_dim = 14
+        elif dataset == 'census': 
+            input_dim = 10
         super(IncomeClassifier, self).__init__()
         self.layer1 = nn.Linear(input_dim, 128)
         self.layer2 = nn.Linear(128, 64)
@@ -181,9 +180,9 @@ def save_model(model, filepath="income_classifier.pth"):
 def load_model(dataset, filepath="income_classifier.pth"):
     if dataset == 'adult' : 
         input_dim = 12 
-    else :
-        input_dim = 14
-    model = IncomeClassifier(input_dim=input_dim)  # Create an instance
+    elif dataset == 'census' :
+        input_dim = 10
+    model = IncomeClassifier(dataset= dataset)  # Create an instance
     model.load_state_dict(torch.load(filepath)) 
     return model 
 

@@ -22,6 +22,10 @@ class Server():
         initialize_values = []
         if (self.set_dataset):
             save_model(self.global_model)
+            if self.dataset == 'census' :
+                save_dataset()
+            else : 
+                load_data(self.number_of_clients)
         else: 
             try:
                 self.global_model = load_model(dataset= self.dataset)
@@ -29,12 +33,6 @@ class Server():
                 sys.exit("Initialize the data set first -> set_new_test = True")
 
         for client_id in range(self.number_of_clients):
-            if (self.set_dataset) :
-                if self.dataset == 'census' :
-                    save_dataset(client_id, self.number_of_clients)
-                else : 
-                    load_data(self.number_of_clients)
-
             train_holder, test_holder, sensitive_attr_index, privileged_value = prepare_dataset(client_id, dataset= self.dataset)
             self.clients.append(Client(client_id, self.global_model, trainloader=train_holder, testloader=test_holder, 
                                 sensitive_attr=sensitive_attr_index, privileged_value=privileged_value))
