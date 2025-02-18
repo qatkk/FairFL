@@ -3,13 +3,16 @@ from task import load_data, IncomeClassifier, save_dataset, prepare_dataset, sav
 import sys
 
 class Server():
-    def __init__(self, convergence_threshold, beta, set_new_test, number_of_clients, dataset = 'adult'):
+    def __init__(self, convergence_threshold, beta, set_new_test, number_of_clients, dataset = 'adult', attack = False, attack_scenario = {"metric": None, "goal": None, "ratio": 1}, verbose = False):
         self.clients = [] 
+        self.verbos = verbose
         self.dataset = dataset
         self.total_number_of_datapoints = 0 
         self.privileged_counts = 0 
         self.unprivileged_counts  = 0 
         self.convergence_threshold = convergence_threshold
+        self.attack = attack
+        self.attack_scenario = attack_scenario
         self.total_labels = 0
         self.number_of_clients = number_of_clients
         self.beta = beta
@@ -30,12 +33,12 @@ class Server():
             try:
                 self.global_model = load_model(dataset= self.dataset)
             except Exception as e:
-                sys.exit("Initialize the data set first -> set_new_test = True")
+                sys.exit("Initialize the dataset first -> set_new_test = True")
 
         for client_id in range(self.number_of_clients):
             train_holder, test_holder, sensitive_attr_index, privileged_value = prepare_dataset(client_id, dataset= self.dataset)
             self.clients.append(Client(client_id, self.global_model, trainloader=train_holder, testloader=test_holder, 
-                                sensitive_attr=sensitive_attr_index, privileged_value=privileged_value))
+                                sensitive_attr=sensitive_attr_index, privileged_value=privileged_value, malicious= self.attack, attack_scenario = self.attack_scenario))
             # ///////////////////  Initialization  
             initialize_values.append(list(self.clients[client_id].initialize_round()))
             self.total_number_of_datapoints += initialize_values[client_id][0]
@@ -68,8 +71,8 @@ class Server():
             self.accuracy_values["global value"] = 0
             if (round>=1):
                 fairness_epsilon = abs(self.fairness_values["global hist"][round] - self.fairness_values["global hist"][round-1])
-
-            print(f"Fairness values are: \n {self.fairness_values['local hist'][round]} \n and accuracies are: \n {self.accuracy_values["local hist"][round]}")
+            if self.verbos: 
+                print(f"Fairness values are: \n {self.fairness_values['local hist'][round]} \n and accuracies are: \n {self.accuracy_values["local hist"][round]}")
 
             #  ///////////////////////  Delta Computation 
             self.fairness_values["local differences"].append([])
