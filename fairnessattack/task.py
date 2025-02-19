@@ -91,7 +91,6 @@ def save_dataset(save_path: str = "./data/"):
         45: "VA", 46: "WA", 47: "WV", 48: "WI", 49: "WY", 50: "PR"
     }
     for state_index in range(51):
-        print(state_abbreviations[state_index])
         acs_data = data_source.get_data(states=[state_abbreviations[state_index]], download=True)
         features, label, _ = ACSIncome.df_to_numpy(acs_data)
 
@@ -157,41 +156,33 @@ class IncomeClassifier(nn.Module):
         elif dataset == 'census': 
             input_dim = 10
         super(IncomeClassifier, self).__init__()
-        self.layer1 = nn.Linear(input_dim, 128)
-        self.layer2 = nn.Linear(128, 64)
-        self.output = nn.Linear(64, 1)
-        self.relu = nn.ReLU()
-        self.sigmoid = nn.Sigmoid()
+        self.weights = nn.Parameter(torch.randn(input_dim, 1))  # Learnable weights
+        self.bias = nn.Parameter(torch.zeros(1))  # Bias term        
 
     def forward(self, x):
-        x = self.relu(self.layer1(x))
-        x = self.relu(self.layer2(x))
-        x = self.sigmoid(self.output(x))
-        return x
+        logits = torch.matmul(x, self.weights) + self.bias
+        return torch.sigmoid(logits)  
+    
 
 def save_model(model, filepath="income_classifier.pth"):
     torch.save(model.state_dict(), filepath)
     print(f"Model weights saved to {filepath}")\
     
 def load_model(dataset, filepath="income_classifier.pth"):
-    if dataset == 'adult' : 
-        input_dim = 12 
-    elif dataset == 'census' :
-        input_dim = 10
     model = IncomeClassifier(dataset= dataset)  # Create an instance
     model.load_state_dict(torch.load(filepath)) 
     return model 
 
 
-def train(model, train_loader, num_epochs=1):
-    criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    model.train()
+def train(model, train_loader, num_epochs=1, learning_rate = 0.01):
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate)  # Stochastic Gradient Descent
+    loss_fn = nn.BCELoss()  # Binary Cross-Entropy Loss
+    
     for epoch in range(num_epochs):
         for X_batch, y_batch in train_loader:
             optimizer.zero_grad()
-            outputs = model(X_batch)
-            loss = criterion(outputs, y_batch)
+            y_pred = model(X_batch)
+            loss = loss_fn(y_pred, y_batch)
             loss.backward()
             optimizer.step()
 
@@ -205,20 +196,21 @@ def evaluate(model, test_loader):
     with torch.no_grad():
         for X_batch, y_batch in test_loader:
             outputs = model(X_batch)
+            y_batch = y_batch.float()
             batch_loss = criterion(outputs, y_batch)
             loss += batch_loss.item()
             predicted = (outputs > 0.5).float()
             total += y_batch.size(0)
             correct += (predicted == y_batch).sum().item()
     accuracy = correct / total
-    loss = loss / len(test_loader)
+    loss /= total
     return loss, accuracy
 
 def fairness(
         model, test_loader, global_privileged_prob,
         global_unprivilege_prob, attr_index, privileged_value, 
         client_priviledge_label_count, client_unprivilege_label_count, 
-        client_points, total_points, total_unprivilege_label_count, total_privilege_label_count):
+        client_points, total_points):
     model.eval()
     privileged = 0 
     unprivilege = 0 
@@ -253,7 +245,8 @@ def fairness(
     p_3 = global_unprivilege_prob
     p_5 = client_priviledge_label_count / client_points 
     p_6 = global_privileged_prob
-    client_fairness = (client_points/total_points) * (((p_1 * p_2 )/p_3) - ((p_4 * p_5)/p_6))
+    client_fairness =  (((p_1 * p_2 )/p_3) - ((p_4 * p_5)/p_6))
+    client_fairness = (client_points / total_points) * client_fairness 
     return client_fairness
 
 

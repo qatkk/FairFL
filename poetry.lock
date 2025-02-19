@@ -422,6 +422,24 @@ graph = ["objgraph (>=1.7.2)"]
 profile = ["gprof2dot (>=2022.7.29)"]
 
 [[package]]
+name = "fairlearn"
+version = "0.12.0"
+description = "A Python package to assess and improve fairness of machine learning models."
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "fairlearn-0.12.0-py3-none-any.whl", hash = "sha256:bcebeec54a7c35bc2ff0ce6e5cb123b959ad46ff8f9032d9cea9906f604dfaf4"},
+    {file = "fairlearn-0.12.0.tar.gz", hash = "sha256:bd3d79a3c0e4b35a9732278e20b6be80cbd6c47cf560326ffe9aaf0b8077e76f"},
+]
+
+[package.dependencies]
+numpy = ">=1.24.4"
+pandas = ">=2.0.3"
+scikit-learn = ">=1.2.1"
+scipy = ">=1.9.3"
+
+[[package]]
 name = "filelock"
 version = "3.17.0"
 description = "A platform independent file lock."
@@ -460,6 +478,24 @@ tqdm = ">=4.66.1,<5.0.0"
 [package.extras]
 audio = ["librosa (>=0.10.0.post2)", "soundfile (>=0.12.1)"]
 vision = ["pillow (>=6.2.1)"]
+
+[[package]]
+name = "folktables"
+version = "0.0.12"
+description = "New machine learning benchmarks from tabular datasets."
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "folktables-0.0.12-py3-none-any.whl", hash = "sha256:979cda1900094b845ab3a8a3ae1b848f0138b780d5f8d17eeb6eb04c3c0c6617"},
+    {file = "folktables-0.0.12.tar.gz", hash = "sha256:e83dde0cbcdd54c7c39b175006a50bdfc4adc351f69d4389f82aaba3eee02115"},
+]
+
+[package.dependencies]
+numpy = "*"
+pandas = "*"
+requests = "*"
+scikit-learn = "*"
 
 [[package]]
 name = "fonttools"
@@ -2433,4 +2469,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<4.0"
-content-hash = "5811e0ef1e2dcf657dc88bfed29c013cafdab642d614fc2d7bbdfcedd590be87"
+content-hash = "09b08f1a63ca227c29304cb206064869fb1a83a68c56abff11374108263cbd0b"

@@ -47,7 +47,6 @@ class Server():
             self.unprivileged_counts += initialize_values[client_id][2]
         for client_id in range(self.number_of_clients): 
             self.clients[client_id].initialize_weights(self.total_number_of_datapoints)
-    
 
 
     def training(self):
@@ -59,7 +58,10 @@ class Server():
             self.fairness_values["local hist"].append([])
             self.accuracy_values["local hist"].append([])
             for client_id in range(self.number_of_clients):
-                self.fairness_values["local hist"][round].append(self.clients[client_id].fairness_evaluate(self.privileged_counts/self.total_number_of_datapoints, self.unprivileged_counts/self.total_number_of_datapoints, self.total_number_of_datapoints, self.privileged_counts, self.unprivileged_counts))
+                client_fairness = self.clients[client_id].fairness_evaluate(privileged_probability=float(self.privileged_counts/self.total_number_of_datapoints), 
+                                                                            unprivileged_probability=float(self.unprivileged_counts/self.total_number_of_datapoints),
+                                                                            total_data_points=self.total_number_of_datapoints)
+                self.fairness_values["local hist"][round].append(client_fairness)
                 self.fairness_values["global value"] += self.fairness_values["local hist"][round][client_id]
                 _, _, client_accuracy = self.clients[client_id].evaluate()
                 self.accuracy_values["local hist"][round].append(client_accuracy["weighted"]/self.total_number_of_datapoints)

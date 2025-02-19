@@ -32,14 +32,11 @@ class Client():
         loss, accuracy = evaluate(self.net, self.testloader)
         return loss, len(self.testloader), {"accuracy": accuracy, "weighted": accuracy*self.data_size}
     
-    def fairness_evaluate(self, privileged_probability, unprivileged_probability,
-                total_data_points, total_privilege_label_count, total_unprivilege_label_count):
+    def fairness_evaluate(self, privileged_probability, unprivileged_probability, total_data_points):
         self.fairness = fairness(model=self.net, test_loader=self.testloader, global_privileged_prob=privileged_probability, 
                 global_unprivilege_prob=unprivileged_probability, attr_index=self.sensitive_attr, 
                 privileged_value=self.privileged_value, client_priviledge_label_count=self.labeled_privileged, 
-                client_unprivilege_label_count=self.labeled_unprivileged, client_points=self.data_size, total_points=total_data_points, 
-                total_privilege_label_count=total_privilege_label_count, total_unprivilege_label_count=total_unprivilege_label_count)
-        
+                client_unprivilege_label_count=self.labeled_unprivileged, client_points=self.data_size, total_points=total_data_points)
         return self.fairness
 
     
@@ -47,8 +44,11 @@ class Client():
         privileged = 0 
         unprivilege = 0
         labeled = 0 
+        data_size = 0 
         if (self.attack_scenario['metric'] == 'size') & (self.malicious == True): 
-            self.data_size = manipulate_parameter(self.attack_scenario, self.data_size, self.id)
+            self.data_size, data_size = manipulate_parameter(self.attack_scenario, self.data_size, self.id)
+        else : 
+            data_size = self.data_size
 
         with torch.no_grad():
             for X_batch, y_batch in self.trainloader:
@@ -70,10 +70,10 @@ class Client():
         if labeled !=0 :   
             self.labeled_privileged = privileged
             self.labeled_unprivileged = unprivilege
-            return self.data_size, privileged, unprivilege, labeled
+            return data_size, privileged, unprivilege, labeled
         else: 
             warnings.warn(f"Client {self.id} doesn't have any true labeled data")
-            return self.data_size, privileged, unprivilege, labeled
+            return data_size, privileged, unprivilege, labeled
 
     
     def initialize_weights(self, total_size):
@@ -93,7 +93,8 @@ class Client():
     
 def manipulate_parameter(attack_scenario, manipulated_param, client_id):
         if (attack_scenario['goal'] == 'contribution' and client_id == 49) : # The id for Wyoming state with the least datasize
-            manipulated_param = int(manipulated_param * attack_scenario['ratio'])
-        elif attack_scenario['goal'] == 'fairness' and client_id == 10 : # Client id for Hawaii with least privileged people
-            manipulated_param = int(manipulated_param * attack_scenario['ratio'])
-        return manipulated_param
+            return int(manipulated_param * attack_scenario['ratio']), 0
+        elif attack_scenario['goal'] == 'fairness' and client_id == 44 : # The id for Vermount with most privileged people
+            return int(manipulated_param * attack_scenario['ratio']), 0
+        else :
+            return  manipulated_param ,  manipulated_param
