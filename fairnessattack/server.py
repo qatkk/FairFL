@@ -1,4 +1,5 @@
-from client import Client 
+from client import Client
+import numpy as np  
 from task import load_data, IncomeClassifier, save_dataset, prepare_dataset, save_model, load_model, set_weights, get_weights
 import sys
 
@@ -45,6 +46,14 @@ class Server():
             self.total_labels += initialize_values[client_id][3]
             self.privileged_counts += initialize_values[client_id][1]
             self.unprivileged_counts += initialize_values[client_id][2]
+            if (self.verbos): 
+                print(f"""Client {client_id} has been registered with the following values: Total number of datapoints: {initialize_values[client_id][0]}
+                      which {initialize_values[client_id][1]} are labeled positive and privileged
+                      and {initialize_values[client_id][2]} are labeled positive and unprivileged""")
+        if (self.verbos):
+            print(f"""The overall number of data points are {self.total_number_of_datapoints} 
+                  which {self.privileged_counts} are privileged and 
+                  {self.unprivileged_counts} are unprivileged""")
         for client_id in range(self.number_of_clients): 
             self.clients[client_id].initialize_weights(self.total_number_of_datapoints)
 
@@ -54,25 +63,34 @@ class Server():
         fairness_epsilon = 1000
         while(fairness_epsilon > self.convergence_threshold):
             print(f"Starting round {round}")
+            # ///////////////////// Fitting the new global model parameters 
+            for client_id in range(self.number_of_clients):
+                self.clients[client_id].fit(get_weights(self.global_model))
+
             #  //////////////////////   Fairness Computation  
             self.fairness_values["local hist"].append([])
             self.accuracy_values["local hist"].append([])
+            if round == 0 : 
+                global_fairness = 0 
+            else : 
+                global_fairness = self.fairness_values['global value']
+            self.fairness_values["global value"] = 0 
+            self.accuracy_values["global value"] = 0
             for client_id in range(self.number_of_clients):
-                client_fairness = self.clients[client_id].fairness_evaluate(privileged_probability=float(self.privileged_counts/self.total_number_of_datapoints), 
-                                                                            unprivileged_probability=float(self.unprivileged_counts/self.total_number_of_datapoints),
-                                                                            total_data_points=self.total_number_of_datapoints)
+                client_fairness = self.clients[client_id].fairness_evaluate(privileged_count=self.privileged_counts, 
+                                                                            unprivileged_count=self.unprivileged_counts,
+                                                                            total_data_points=self.total_number_of_datapoints, 
+                                                                            global_fairness=global_fairness)
                 self.fairness_values["local hist"][round].append(client_fairness)
                 self.fairness_values["global value"] += self.fairness_values["local hist"][round][client_id]
-                _, _, client_accuracy = self.clients[client_id].evaluate()
-                self.accuracy_values["local hist"][round].append(client_accuracy["weighted"]/self.total_number_of_datapoints)
+                _, _, client_accuracy = self.clients[client_id].evaluate(self.total_number_of_datapoints)
+                self.accuracy_values["local hist"][round].append(client_accuracy["weighted"])
                 self.accuracy_values["global value"] += self.accuracy_values["local hist"][round][client_id]
-
             self.fairness_values["global hist"].append(self.fairness_values["global value"])
-            self.fairness_values["global value"] = 0 
             self.accuracy_values["global hist"].append(self.accuracy_values["global value"])
-            self.accuracy_values["global value"] = 0
             if (round>=1):
                 fairness_epsilon = abs(self.fairness_values["global hist"][round] - self.fairness_values["global hist"][round-1])
+
             if self.verbos: 
                 print(f"Fairness values are: \n {self.fairness_values['local hist'][round]} \n and accuracies are: \n {self.accuracy_values["local hist"][round]}")
 
@@ -82,9 +100,11 @@ class Server():
             self.fairness_values["global delta"] = 0
             self.accuracy_values["global delta"] = 0
             for client_id in range(self.number_of_clients):
-                self.fairness_values["local differences"][round].append(abs(self.fairness_values["global hist"][round] - self.fairness_values["local hist"][round][client_id]))
+                global_values = {"fairness": self.fairness_values['global hist'][round], "accuracy": self.accuracy_values['global hist'][round]}
+                client_delta = self.clients[client_id].return_delta(global_values)
+                self.fairness_values["local differences"][round].append(client_delta['fairness'])
                 self.fairness_values["global delta"] += self.fairness_values["local differences"][round][client_id]/self.number_of_clients
-                self.accuracy_values["local differences"][round].append(abs(self.accuracy_values["global hist"][round] - self.accuracy_values["local hist"][round][client_id]))
+                self.accuracy_values["local differences"][round].append(client_delta['accuracy'])
                 self.accuracy_values["global delta"] += self.accuracy_values["local differences"][round][client_id]/self.number_of_clients
 
             self.fairness_values["global delta hist"].append(self.fairness_values["global delta"])
@@ -96,19 +116,14 @@ class Server():
                 self.clients[client_id].update_weights(self.beta, self.fairness_values['local differences'][round][client_id], self.fairness_values["global delta hist"][round])
             
             # ///////////////////// Model Aggregation 
-            aggregated_weights = 0 
+            aggregated_weights = self.clients[0].get_weight()
             global_parameters = self.clients[0].get_client_parameters(weighted = True)
-            for client_id in range(self.number_of_clients): 
+            for client_id in range(1, self.number_of_clients): 
                 aggregated_weights += self.clients[client_id].get_weight()
-                if (client_id != 0):
-                    global_parameters = [arr1 + arr2 for arr1, arr2 in zip(global_parameters, self.clients[client_id].get_client_parameters(weighted = True))]
-            aggregated_parameters = [arr / aggregated_weights for arr in global_parameters]
+                global_parameters = [arr1 + arr2 for arr1, arr2 in zip(global_parameters, self.clients[client_id].get_client_parameters(weighted = True))]
+            aggregated_parameters = [arr.astype(np.float64) / float(aggregated_weights) for arr in global_parameters]
             set_weights(self.global_model, aggregated_parameters)
-            # ///////////////////// Fitting the new global model parameters 
-            for client_id in range(self.number_of_clients):
-                self.clients[client_id].fit(aggregated_parameters)
-
-            round += 1 
+            round += 1             
 
     def get_fairness_values(self):
         return self.fairness_values

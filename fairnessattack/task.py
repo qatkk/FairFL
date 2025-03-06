@@ -98,12 +98,12 @@ def save_dataset(save_path: str = "./data/"):
         X_train, X_test, y_train, y_test = train_test_split(
             X, label, test_size=0.20, random_state=42
         )
-        # train_data = X_train.copy()
-        # train_data['income'] = y_train
-        # for _ in range(10):
-        #     train_data = train_data.sample(frac=1, random_state=99).reset_index(drop=True)
-        # X_train = pd.DataFrame(train_data.drop(columns=["income"]))
-        # y_train = train_data["income"]
+        train_data = X_train.copy()
+        train_data['income'] = y_train
+        for _ in range(10):
+            train_data = train_data.sample(frac=1, random_state=45).reset_index(drop=True)
+        X_train = pd.DataFrame(train_data.drop(columns=["income"]))
+        y_train = train_data["income"]
         pd.DataFrame(X_train).to_csv(save_path + str(state_index)+ "_train_dataset.csv" , index=False)
         pd.DataFrame(y_train).to_csv(save_path + str(state_index)+ "_train_label_dataset.csv" , index=False)
         pd.DataFrame(X_test).to_csv(save_path + str(state_index)+ "_test_dataset.csv", index=False)
@@ -150,23 +150,24 @@ def prepare_dataset(partition_id, dataset, file_path: str = "./data/"):
 
 
 class IncomeClassifier(nn.Module):
-    def __init__(self, dataset):
+    def __init__(self, dataset, custom_weights=None, custom_bias=None):
+        super(IncomeClassifier, self).__init__()
         if dataset == 'adult':
             input_dim = 12 
         elif dataset == 'census': 
-            input_dim = 10
-        super(IncomeClassifier, self).__init__()
-        self.weights = nn.Parameter(torch.randn(input_dim, 1))  # Learnable weights
-        self.bias = nn.Parameter(torch.zeros(1))  # Bias term        
-
-    def forward(self, x):
-        logits = torch.matmul(x, self.weights) + self.bias
-        return torch.sigmoid(logits)  
+            input_dim = 10      
+        self.linear = nn.Linear(input_dim, 1)
+        if custom_weights is not None and custom_bias is not None:
+            with torch.no_grad():
+                self.linear.weight.copy_(custom_weights)
+                self.linear.bias.copy_(custom_bias)
+    def forward(self, x):  
+        return torch.sigmoid(self.linear(x))
     
 
 def save_model(model, filepath="income_classifier.pth"):
     torch.save(model.state_dict(), filepath)
-    print(f"Model weights saved to {filepath}")\
+    print(f"Model weights saved to {filepath}")
     
 def load_model(dataset, filepath="income_classifier.pth"):
     model = IncomeClassifier(dataset= dataset)  # Create an instance
@@ -174,7 +175,7 @@ def load_model(dataset, filepath="income_classifier.pth"):
     return model 
 
 
-def train(model, train_loader, num_epochs=1, learning_rate = 0.01):
+def train(model, train_loader, num_epochs=1, learning_rate = 0.1):
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)  # Stochastic Gradient Descent
     loss_fn = nn.BCELoss()  # Binary Cross-Entropy Loss
     
@@ -207,8 +208,8 @@ def evaluate(model, test_loader):
     return loss, accuracy
 
 def fairness(
-        model, test_loader, global_privileged_prob,
-        global_unprivilege_prob, attr_index, privileged_value, 
+        model, test_loader, global_privileged_labeled_count,
+        global_unprivilege_labeled_count, attr_index, privileged_value, 
         client_priviledge_label_count, client_unprivilege_label_count, 
         client_points, total_points):
     model.eval()
@@ -240,11 +241,11 @@ def fairness(
         p_1 = 0
     else  :
         p_1 = unprivilege / client_unprivilege_label_count
-        
+
     p_2 = client_unprivilege_label_count / client_points 
-    p_3 = global_unprivilege_prob
+    p_3 = global_unprivilege_labeled_count / total_points
     p_5 = client_priviledge_label_count / client_points 
-    p_6 = global_privileged_prob
+    p_6 = global_privileged_labeled_count / total_points
     client_fairness =  (((p_1 * p_2 )/p_3) - ((p_4 * p_5)/p_6))
     client_fairness = (client_points / total_points) * client_fairness 
     return client_fairness
@@ -260,3 +261,13 @@ def set_weights(net, parameters):
 def get_weights(net, scalar = 1.0):
     ndarrays = [val.cpu().numpy() * scalar for _, val in net.state_dict().items()]
     return ndarrays
+
+def test_updated_model (model, test_loader): 
+    # model.eval()
+    batch = 0 
+    # with torch.no_grad():
+    for X_batch, y_batch in test_loader:
+        labeled = (y_batch.view(-1) == 1) 
+        outputs = model(X_batch)
+        predicted = (outputs > 0.5)
+        return predicted
