@@ -42,7 +42,7 @@ class Client():
                 client_unprivilege_label_count=self.labeled_unprivileged, client_points=self.data_size, total_points=total_data_points)
         if (self.attack_scenario['metric'] == 'fairness') & (self.malicious == True): 
             return manipulate_parameter(attack_scenario=self.attack_scenario, client_id=self.id, manipulated_param=[global_fairness, self.fairness])
-        return self.fairness
+        return self.fairness * (self.data_size/total_data_points)
 
     
     def initialize_round(self):

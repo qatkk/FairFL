@@ -247,7 +247,6 @@ def fairness(
     p_5 = client_priviledge_label_count / client_points 
     p_6 = global_privileged_labeled_count / total_points
     client_fairness =  (((p_1 * p_2 )/p_3) - ((p_4 * p_5)/p_6))
-    client_fairness = (client_points / total_points) * client_fairness 
     return client_fairness
 
 
