@@ -12,7 +12,7 @@ from sklearn.preprocessing import OrdinalEncoder, StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 from datasets import load_dataset
 
-fds = None  # Cache FederatedDataset
+fds = None  
 
 
 def load_data(num_partitions: int):
@@ -95,58 +95,51 @@ def save_dataset(save_path: str = "./data/"):
         features, label, _ = ACSIncome.df_to_numpy(acs_data)
 
         X = pd.DataFrame(features, columns=ACSIncome.features)
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, label, test_size=0.20, random_state=42
-        )
-        train_data = X_train.copy()
-        train_data['income'] = y_train
+        train_data = X.copy()
+        train_data['income'] = label
         for _ in range(10):
             train_data = train_data.sample(frac=1, random_state=45).reset_index(drop=True)
         X_train = pd.DataFrame(train_data.drop(columns=["income"]))
         y_train = train_data["income"]
         pd.DataFrame(X_train).to_csv(save_path + str(state_index)+ "_train_dataset.csv" , index=False)
         pd.DataFrame(y_train).to_csv(save_path + str(state_index)+ "_train_label_dataset.csv" , index=False)
-        pd.DataFrame(X_test).to_csv(save_path + str(state_index)+ "_test_dataset.csv", index=False)
-        pd.DataFrame(y_test).to_csv(save_path + str(state_index)+ "_test_label_dataset.csv", index=False)
 
 
 
 
 def prepare_dataset(partition_id, dataset, file_path: str = "./data/"):
-    X_train = pd.read_csv(file_path + str(partition_id)+ "_train_dataset.csv")
-    y_train = pd.read_csv(file_path + str(partition_id)+ "_train_label_dataset.csv" )
-    X_test = pd.read_csv(file_path + str(partition_id)+ "_test_dataset.csv")
-    y_test = pd.read_csv(file_path + str(partition_id)+ "_test_label_dataset.csv")
-    X = pd.concat([X_train, X_test], ignore_index=True)
+    X = pd.read_csv(file_path + str(partition_id) + "_train_dataset.csv")
+    y = pd.read_csv(file_path + str(partition_id) + "_train_label_dataset.csv")
+
     if dataset == 'adult':
-        attribute = {"name": 'is_male', 'value':True}
-    else: 
-        attribute = {"name": 'RAC1P', 'value':1}
+        attribute = {"name": 'is_male', 'value': True}
+    else:
+        attribute = {"name": 'RAC1P', 'value': 1}
     attr_index = X.columns.get_loc(attribute["name"])
-    numeric_features = X.select_dtypes(include=["float64", "int64"]).columns
+
+    if not isinstance(X, pd.DataFrame):
+        X = pd.DataFrame(X) 
+    numeric_features = X.select_dtypes(include=["float64", "int64"]).columns.tolist()
+
     numeric_transformer = Pipeline(steps=[("scaler", StandardScaler())])
+    preprocessor = ColumnTransformer(transformers=[("num", numeric_transformer, numeric_features)])
 
-    preprocessor = ColumnTransformer(
-        transformers=[("num", numeric_transformer, numeric_features)]
-    )
-    X_train = preprocessor.fit_transform(X_train)
+    X_train = preprocessor.fit_transform(X)  
 
+    privileged_transformed = -1  
     try:
-        row = X_test[X_test[attribute["name"]] == attribute["value"]].iloc[0]
-        row_df = pd.DataFrame([row])
-        privileged_transformed = preprocessor.transform(row_df)[:, attr_index][0]
-    except: 
-        privileged_transformed = -1 
-    X_test = preprocessor.transform(X_test)
+        privileged_row = X.loc[X[attribute["name"]] == attribute["value"]].iloc[0]  
+        privileged_row_df = privileged_row.to_frame().T  
+        privileged_transformed = preprocessor.transform(privileged_row_df)[0, attr_index]  
+    except Exception as e:
+        print(f"Error finding privileged transformed value: {e}")
+
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
-    X_test_tensor = torch.tensor(X_test, dtype=torch.float32)
-    y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32).view(-1, 1)
-    y_test_tensor = torch.tensor(y_test.values, dtype=torch.float32).view(-1, 1)
+    y_train_tensor = torch.tensor(y.values, dtype=torch.float32).view(-1, 1)
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-    test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
     train_loader = DataLoader(train_dataset, batch_size=35, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=35, shuffle=False)
-    return train_loader, test_loader, attr_index, privileged_transformed
+
+    return train_loader, attr_index, privileged_transformed
 
 
 class IncomeClassifier(nn.Module):
@@ -175,7 +168,7 @@ def load_model(dataset, filepath="income_classifier.pth"):
     return model 
 
 
-def train(model, train_loader, num_epochs=1, learning_rate = 0.1):
+def train(model, train_loader, num_epochs=1, learning_rate = 0.01):
     optimizer = optim.SGD(model.parameters(), lr=learning_rate)  # Stochastic Gradient Descent
     loss_fn = nn.BCELoss()  # Binary Cross-Entropy Loss
     

@@ -24,21 +24,23 @@ class Server():
     
     def initilize(self): 
         initialize_values = []
-        if (self.set_dataset):
+        if (self.set_dataset['load data']):
             save_model(self.global_model)
             if self.dataset == 'census' :
                 save_dataset()
             else : 
                 load_data(self.number_of_clients)
-        else: 
+        elif self.set_dataset['load model']: 
+            save_model(self.global_model)
+        else:
             try:
-                self.global_model = load_model(dataset= self.dataset)
+                self.global_model = load_model(dataset=self.dataset)
             except Exception as e:
                 sys.exit("Initialize the dataset first -> set_new_test = True")
 
         for client_id in range(self.number_of_clients):
-            train_holder, test_holder, sensitive_attr_index, privileged_value = prepare_dataset(client_id, dataset= self.dataset)
-            self.clients.append(Client(client_id, self.global_model, trainloader=train_holder, testloader=test_holder, 
+            train_holder, sensitive_attr_index, privileged_value = prepare_dataset(client_id, dataset= self.dataset)
+            self.clients.append(Client(client_id, self.global_model, trainloader=train_holder, 
                                 sensitive_attr=sensitive_attr_index, privileged_value=privileged_value, malicious= self.attack, attack_scenario = self.attack_scenario))
             # ///////////////////  Initialization  
             initialize_values.append(list(self.clients[client_id].initialize_round()))
@@ -49,7 +51,7 @@ class Server():
             if (self.verbos): 
                 print(f"""Client {client_id} has been registered with the following values: Total number of datapoints: {initialize_values[client_id][0]}
                       which {initialize_values[client_id][1]} are labeled positive and privileged
-                      and {initialize_values[client_id][2]} are labeled positive and unprivileged""")
+                      and {initialize_values[client_id][2]} are labeled positive and unprivileged""")                
         if (self.verbos):
             print(f"""The overall number of data points are {self.total_number_of_datapoints} 
                   which {self.privileged_counts} are privileged and 
@@ -63,9 +65,6 @@ class Server():
         fairness_epsilon = 1000
         while(fairness_epsilon > self.convergence_threshold):
             print(f"Starting round {round}")
-            # ///////////////////// Fitting the new global model parameters 
-            for client_id in range(self.number_of_clients):
-                self.clients[client_id].fit(get_weights(self.global_model))
 
             #  //////////////////////   Fairness Computation  
             self.fairness_values["local hist"].append([])
@@ -88,19 +87,28 @@ class Server():
                 self.accuracy_values["global value"] += self.accuracy_values["local hist"][round][client_id]
             self.fairness_values["global hist"].append(self.fairness_values["global value"])
             self.accuracy_values["global hist"].append(self.accuracy_values["global value"])
+            print(f"global fairness value is {self.fairness_values['global value']}")
+
+            # ///////////////////// Fitting the new global model parameters 
+            for client_id in range(self.number_of_clients):
+                self.clients[client_id].fit(get_weights(self.global_model))
+
             if (round>=1):
                 fairness_epsilon = abs(self.fairness_values["global hist"][round] - self.fairness_values["global hist"][round-1])
 
             if self.verbos: 
                 print(f"Fairness values are: \n {self.fairness_values['local hist'][round]} \n and accuracies are: \n {self.accuracy_values["local hist"][round]}")
-
+                    
             #  ///////////////////////  Delta Computation 
             self.fairness_values["local differences"].append([])
             self.accuracy_values["local differences"].append([])
             self.fairness_values["global delta"] = 0
             self.accuracy_values["global delta"] = 0
             for client_id in range(self.number_of_clients):
-                global_values = {"fairness": self.fairness_values['global hist'][round], "accuracy": self.accuracy_values['global hist'][round]}
+                global_values = {"fairness": self.fairness_values['global hist'][round], 
+                                 "accuracy": self.accuracy_values['global hist'][round], 
+                                 'fairness delta': self.fairness_values['global delta hist'], 
+                                 'accuracy delta': self.accuracy_values['global delta hist']}
                 client_delta = self.clients[client_id].return_delta(global_values)
                 self.fairness_values["local differences"][round].append(client_delta['fairness'])
                 self.fairness_values["global delta"] += self.fairness_values["local differences"][round][client_id]/self.number_of_clients
@@ -109,6 +117,9 @@ class Server():
 
             self.fairness_values["global delta hist"].append(self.fairness_values["global delta"])
             self.accuracy_values["global delta hist"].append(self.accuracy_values["global delta"])
+
+            if self.verbos and self.attack and self.attack_scenario['metric'] == 'delta':
+                print(f"The delta values for this round are: \n fairness:{self.fairness_values['global delta hist'][round]}\n accuracy: {self.accuracy_values['global delta hist'][round]}")
 
 
             # ///////////////////// Local Weight Update
