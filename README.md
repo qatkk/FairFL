@@ -14,7 +14,7 @@ After setting your desired training values in the "main.py" run the project as b
 
 `cd fairnessattack`
 
-`mkdir data' 
+`mkdir data` 
 
 `poetry run python main.py`
 
